@@ -1,14 +1,36 @@
 import argparse
+import time
+import random
 from scanner.orchestrator import PortScanOrchestrator
 
 
-def parse_ports(start, end):
-    return list(range(start, end + 1))
+def get_scan_profile(mode):
+    """
+    Defines scan behavior based on mode
+    """
+    if mode == "stealth":
+        return {
+            "workers": 20,
+            "timeout": 3,
+            "delay": (0.2, 0.6)
+        }
+    elif mode == "aggressive":
+        return {
+            "workers": 300,
+            "timeout": 0.5,
+            "delay": (0, 0)
+        }
+    else:  # baseline
+        return {
+            "workers": 100,
+            "timeout": 1,
+            "delay": (0, 0)
+        }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Python Network Port Scanner (Educational Use Only)"
+        description="Adaptive Network Reconnaissance Tool (Educational Use Only)"
     )
 
     parser.add_argument(
@@ -31,10 +53,10 @@ def main():
     )
 
     parser.add_argument(
-        "-t", "--timeout",
-        type=int,
-        default=1,
-        help="Socket timeout in seconds"
+        "--mode",
+        choices=["baseline", "aggressive", "stealth"],
+        default="baseline",
+        help="Scan mode (baseline | aggressive | stealth)"
     )
 
     parser.add_argument(
@@ -43,37 +65,43 @@ def main():
         help="Enable banner grabbing"
     )
 
-    parser.add_argument(
-        "-w", "--workers",
-        type=int,
-        default=100,
-        help="Number of concurrent threads"
-    )
-
     args = parser.parse_args()
 
-    ports = parse_ports(args.start, args.end)
+    profile = get_scan_profile(args.mode)
+
+    print(f"\n🔍 Scan mode: {args.mode.upper()}")
+    print(f"Target: {args.target}")
+    print(f"Port range: {args.start}-{args.end}\n")
+
+    ports = list(range(args.start, args.end + 1))
 
     orchestrator = PortScanOrchestrator(
         target=args.target,
         ports=ports,
-        timeout=args.timeout,
+        timeout=profile["timeout"],
         grab_banners=args.banner,
-        workers=args.workers
+        workers=profile["workers"]
     )
 
-    print(f"\n🔍 Scanning {args.target} ({args.start}-{args.end})...\n")
+    results = []
 
-    results = orchestrator.run()
+    # Optional stealth delay handling
+    for chunk_start in range(0, len(ports), 50):
+        chunk = ports[chunk_start:chunk_start + 50]
+        orchestrator.ports = chunk
+        results.extend(orchestrator.run())
+
+        if profile["delay"] != (0, 0):
+            time.sleep(random.uniform(*profile["delay"]))
 
     if not results:
         print("❌ No open ports found.")
         return
 
-    for result in sorted(results, key=lambda x: x["port"]):
-        print(f"[+] Port {result['port']} OPEN ({result['service']})")
-        if result["banner"]:
-            print(f"    Banner: {result['banner'][:100]}")
+    for r in sorted(results, key=lambda x: x["port"]):
+        print(f"[+] Port {r['port']} OPEN ({r['service']})")
+        if r["banner"]:
+            print(f"    Banner: {r['banner'][:100]}")
 
     print(f"\n✅ Scan complete. Open ports found: {len(results)}")
 
